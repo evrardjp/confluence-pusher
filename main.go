@@ -10,12 +10,17 @@ import (
 	"os"
 )
 
-// ConfluencePage structure for the configuration file
-type ConfluencePage struct {
+// Config structure for the configuration file containing multiple pages
+type Config struct {
+	Pages []PageConfig `json:"pages"`
+}
+
+// PageConfig structure for individual page configuration
+type PageConfig struct {
 	PageID    string `json:"page_id"`
 	PageTitle string `json:"page_title"`
 	Version   int    `json:"version"`
-	HTMLContentFile  string `json:"html_content_file"`
+	HTMLFile  string `json:"html_file"`
 }
 
 // Payload structure for the request body
@@ -35,78 +40,83 @@ type Payload struct {
 
 func main() {
 	// Read environment variables
-	apiToken := os.Getenv("CONFLUENCE_API_TOKEN")
-	//email := os.Getenv("CONFLUENCE_EMAIL")
+	pat := os.Getenv("CONFLUENCE_PAT")
 	confluenceURL := os.Getenv("CONFLUENCE_URL")
 
-	//if apiToken == "" || email == "" || confluenceURL == "" {
-	if apiToken == "" || confluenceURL == "" {
-		log.Fatal("Environment variables CONFLUENCE_API_TOKEN, CONFLUENCE_EMAIL, and CONFLUENCE_URL must be set")
+	if pat == "" || confluenceURL == "" {
+		log.Fatal("Environment variables CONFLUENCE_PAT and CONFLUENCE_URL must be set")
 	}
 
 	// Read configuration file
-	pageMetaFile, err := os.Open("page.json")
+	configFile, err := os.Open("config.json")
 	if err != nil {
-		log.Fatalf("Failed to open pagemetafile: %v", err)
+		log.Fatalf("Failed to open config file: %v", err)
 	}
-	defer pageMetaFile.Close()
+	defer configFile.Close()
 
-	var pageMeta ConfluencePage
-	if err := json.NewDecoder(pageMetaFile).Decode(&config); err != nil {
-		log.Fatalf("Failed to decode Page metadata file: %v", err)
-	}
-
-	// Read HTML content from file
-	htmlContent, err := ioutil.ReadFile(config.HTMLContentFile)
-	if err != nil {
-		log.Fatalf("Failed to read HTML file: %v", err)
+	var config Config
+	if err := json.NewDecoder(configFile).Decode(&config); err != nil {
+		log.Fatalf("Failed to decode config file: %v", err)
 	}
 
-	// Create the payload
-	payload := Payload{
-		Title: config.PageTitle,
-		Type:  "page",
-	}
-	payload.Version.Number = config.Version
-	payload.Body.Storage.Value = string(htmlContent)
-	payload.Body.Storage.Representation = "storage"
+	// Iterate through each page configuration and update the page
+	for _, page := range config.Pages {
+		// Read HTML content from file
+		htmlContent, err := ioutil.ReadFile(page.HTMLFile)
+		if err != nil {
+			log.Printf("Failed to read HTML file for page %s: %v", page.PageID, err)
+			continue // Skip to the next page if the file can't be read
+		}
 
-	// Convert payload to JSON
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		log.Fatalf("Failed to marshal JSON: %v", err)
-	}
+		// Create the payload
+		payload := Payload{
+			Title: page.PageTitle,
+			Type:  "page",
+		}
+		payload.Version.Number = page.Version
+		payload.Body.Storage.Value = string(htmlContent)
+		payload.Body.Storage.Representation = "storage"
 
-	// Create HTTP request
-	req, err := http.NewRequest("PUT", confluenceURL+config.PageID, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		log.Fatalf("Failed to create HTTP request: %v", err)
-	}
+		// Convert payload to JSON
+		jsonPayload, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("Failed to marshal JSON for page %s: %v", page.PageID, err)
+			continue // Skip to the next page if JSON marshaling fails
+		}
 
-	// Set headers and authentication
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer " + apiToken)
-	//req.SetBasicAuth(email, apiToken)
+		// Create HTTP request
+		req, err := http.NewRequest("PUT", confluenceURL+page.PageID, bytes.NewBuffer(jsonPayload))
+		if err != nil {
+			log.Printf("Failed to create HTTP request for page %s: %v", page.PageID, err)
+			continue // Skip to the next page if the request fails
+		}
 
-	// Send the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Failed to send HTTP request: %v", err)
-	}
-	defer resp.Body.Close()
+		// Set headers and authentication
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+pat)
 
-	// Read response
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("Failed to read response body: %v", err)
-	}
+		// Send the request
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Failed to send HTTP request for page %s: %v", page.PageID, err)
+			continue // Skip to the next page if the request fails
+		}
+		defer resp.Body.Close()
 
-	// Check the response status
-	if resp.StatusCode == http.StatusOK {
-		fmt.Println("Page updated successfully!")
-	} else {
-		fmt.Printf("Failed to update page. Status: %s, Response: %s\n", resp.Status, string(body))
+		// Read response
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("Failed to read response body for page %s: %v", page.PageID, err)
+			continue // Skip to the next page if reading the response fails
+		}
+
+		// Check the response status
+		if resp.StatusCode == http.StatusOK {
+			fmt.Printf("Page %s updated successfully!\n", page.PageID)
+		} else {
+			fmt.Printf("Failed to update page %s. Status: %s, Response: %s\n", page.PageID, resp.Status, string(body))
+		}
 	}
 }
 

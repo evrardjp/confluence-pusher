@@ -1,0 +1,42 @@
+# Confluence page updater
+
+## How to use
+
+Set Environment Variables CONFLUENCE_PAT and CONFLUENCE_URL:
+
+    bash
+
+    export CONFLUENCE_PAT="your_personal_access_token"
+    export CONFLUENCE_URL="https://your-confluence-site.atlassian.net/wiki/rest/api/content/"
+
+Create or Update the Configuration File, config.json
+
+    Ensure config.json contains the array of pages with the required fields (page ID, title, version, and HTML file path).
+
+    {
+      "pages": [
+        {
+          "page_id": "12345678",
+          "page_title": "Updated Page Title 1",
+          "version": 2,
+          "html_file": "path/to/your-file1.html"
+        },
+        {
+          "page_id": "87654321",
+          "page_title": "Updated Page Title 2",
+          "version": 3,
+          "html_file": "path/to/your-file2.html"
+        }
+        // Add more pages as needed
+      ]
+    }
+
+
+Run the Code:
+
+    Open a terminal and navigate to the directory containing the file.
+    Run the code using the command:
+
+    bash
+
+        go run main.go
